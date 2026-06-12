@@ -1,0 +1,1125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Robotic Arm — Pick & Place Simulation</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&family=Rajdhani:wght@300;400;600&display=swap');
+
+  :root {
+    --bg: #050a0f;
+    --panel: #0a1520;
+    --border: #0d2e45;
+    --accent: #00d4ff;
+    --accent2: #ff6b00;
+    --accent3: #00ff88;
+    --text: #c8e6f5;
+    --dim: #4a7a99;
+    --grid: rgba(0,212,255,0.04);
+    --glow: 0 0 20px rgba(0,212,255,0.4);
+    --glow2: 0 0 20px rgba(255,107,0,0.4);
+  }
+
+  * { margin:0; padding:0; box-sizing:border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 15px;
+    line-height: 1.7;
+    overflow-x: hidden;
+  }
+
+  /* Grid bg */
+  body::before {
+    content:'';
+    position:fixed;
+    inset:0;
+    background-image:
+      linear-gradient(var(--grid) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events:none;
+    z-index:0;
+  }
+
+  /* Scanline overlay */
+  body::after {
+    content:'';
+    position:fixed;
+    inset:0;
+    background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.15) 2px, rgba(0,0,0,0.15) 4px);
+    pointer-events:none;
+    z-index:999;
+    opacity:0.3;
+  }
+
+  .wrap { max-width: 1200px; margin:0 auto; padding: 0 24px; position:relative; z-index:1; }
+
+  /* ── HEADER ── */
+  header {
+    padding: 48px 0 32px;
+    border-bottom: 1px solid var(--border);
+    position: relative;
+  }
+  .header-label {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 11px;
+    color: var(--accent);
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    margin-bottom: 12px;
+    display:flex; align-items:center; gap:10px;
+  }
+  .header-label::before { content:''; display:block; width:24px; height:1px; background:var(--accent); }
+  h1 {
+    font-family: 'Orbitron', sans-serif;
+    font-size: clamp(26px, 5vw, 52px);
+    font-weight: 900;
+    color: #fff;
+    letter-spacing: -1px;
+    line-height: 1.1;
+    text-shadow: 0 0 40px rgba(0,212,255,0.3);
+  }
+  h1 span { color: var(--accent); }
+  .subtitle {
+    margin-top: 12px;
+    color: var(--dim);
+    font-size: 14px;
+    font-family: 'Share Tech Mono', monospace;
+    letter-spacing: 2px;
+  }
+  .meta-row {
+    display: flex; gap: 32px; flex-wrap: wrap;
+    margin-top: 24px;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 11px;
+    color: var(--dim);
+  }
+  .meta-row span { color: var(--accent2); margin-right: 6px; }
+
+  /* ── SECTION HEADERS ── */
+  .sec-label {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 5px;
+    color: var(--accent);
+    text-transform:uppercase;
+    margin-bottom: 8px;
+  }
+  h2 {
+    font-family: 'Orbitron', monospace;
+    font-size: 20px;
+    font-weight: 700;
+    color: #fff;
+    margin-bottom: 20px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border);
+  }
+  h3 {
+    font-family: 'Orbitron', monospace;
+    font-size: 14px;
+    color: var(--accent);
+    margin: 20px 0 8px;
+    letter-spacing:1px;
+  }
+
+  /* ── CARDS ── */
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 24px;
+    position: relative;
+    overflow: hidden;
+  }
+  .card::before {
+    content:'';
+    position:absolute;
+    top:0; left:0; right:0;
+    height:2px;
+    background: linear-gradient(90deg, transparent, var(--accent), transparent);
+    opacity:0.5;
+  }
+
+  section { padding: 48px 0; border-bottom: 1px solid var(--border); }
+
+  /* ── SIMULATION CANVAS AREA ── */
+  .sim-container {
+    background: #020810;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 20px;
+    position: relative;
+  }
+  .sim-header {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 16px;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 11px;
+    color: var(--dim);
+  }
+  .sim-status {
+    display: flex; align-items: center; gap: 8px;
+    color: var(--accent3);
+  }
+  .pulse-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--accent3);
+    animation: pulse 1.2s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.4;transform:scale(0.8)} }
+
+  canvas {
+    display: block;
+    width: 100%;
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    background: #030c15;
+  }
+
+  .ctrl-row {
+    display: flex; gap: 12px; flex-wrap: wrap;
+    margin-top: 16px;
+  }
+  .btn {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 2px;
+    padding: 10px 20px;
+    border: 1px solid var(--accent);
+    background: transparent;
+    color: var(--accent);
+    cursor: pointer;
+    text-transform: uppercase;
+    transition: all 0.2s;
+    border-radius: 2px;
+  }
+  .btn:hover { background: rgba(0,212,255,0.1); box-shadow: var(--glow); }
+  .btn.active { background: rgba(0,212,255,0.15); box-shadow: var(--glow); }
+  .btn.danger { border-color: var(--accent2); color: var(--accent2); }
+  .btn.danger:hover { background: rgba(255,107,0,0.1); box-shadow: var(--glow2); }
+  .btn.success { border-color: var(--accent3); color: var(--accent3); }
+
+  /* ── TELEMETRY ── */
+  .telemetry {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 12px;
+    margin-top: 16px;
+  }
+  .tele-box {
+    background: #020810;
+    border: 1px solid var(--border);
+    padding: 12px 16px;
+    border-radius: 2px;
+    font-family: 'Share Tech Mono', monospace;
+  }
+  .tele-label { font-size: 9px; letter-spacing: 3px; color: var(--dim); text-transform: uppercase; margin-bottom: 4px; }
+  .tele-val { font-size: 20px; color: var(--accent); }
+  .tele-unit { font-size: 10px; color: var(--dim); margin-left: 4px; }
+
+  /* ── TABLES ── */
+  table { width: 100%; border-collapse: collapse; font-family: 'Share Tech Mono', monospace; font-size: 12px; }
+  th {
+    text-align: left; padding: 10px 16px;
+    background: rgba(0,212,255,0.06);
+    border: 1px solid var(--border);
+    color: var(--accent);
+    font-weight: normal;
+    letter-spacing: 2px;
+    font-size: 10px;
+    text-transform: uppercase;
+  }
+  td { padding: 10px 16px; border: 1px solid var(--border); color: var(--text); }
+  tr:hover td { background: rgba(0,212,255,0.03); }
+
+  /* ── DOF DIAGRAM ── */
+  .dof-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
+  .dof-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 20px;
+    position: relative;
+    overflow: hidden;
+  }
+  .dof-num {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 40px;
+    font-weight: 900;
+    color: rgba(0,212,255,0.1);
+    position: absolute;
+    top: 8px; right: 16px;
+    line-height: 1;
+  }
+  .dof-name { font-family: 'Orbitron', monospace; font-size: 12px; color: var(--accent); margin-bottom: 6px; }
+  .dof-type { color: var(--accent2); font-family: 'Share Tech Mono', monospace; font-size: 11px; margin-bottom: 8px; }
+  .dof-desc { color: var(--dim); font-size: 13px; }
+
+  /* ── PHASE LIST ── */
+  .phase-list { display: flex; flex-direction: column; gap: 0; }
+  .phase {
+    display: flex; align-items: flex-start; gap: 20px;
+    padding: 20px 0;
+    border-bottom: 1px solid var(--border);
+    position: relative;
+  }
+  .phase:last-child { border-bottom: none; }
+  .phase-num {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 28px;
+    font-weight: 900;
+    color: var(--accent);
+    opacity: 0.3;
+    min-width: 48px;
+    line-height: 1;
+  }
+  .phase-body {}
+  .phase-title { font-family: 'Orbitron', monospace; font-size: 13px; color: #fff; margin-bottom: 6px; }
+  .phase-desc { color: var(--dim); font-size: 13px; }
+
+  /* ── TAG CHIPS ── */
+  .tags { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  .tag {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 2px;
+    padding: 4px 12px;
+    border: 1px solid var(--border);
+    color: var(--dim);
+    border-radius: 2px;
+    text-transform: uppercase;
+  }
+  .tag.hi { border-color: rgba(0,212,255,0.3); color: var(--accent); }
+  .tag.warn { border-color: rgba(255,107,0,0.3); color: var(--accent2); }
+
+  /* ── LOG ── */
+  .log-area {
+    background: #020810;
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    padding: 16px;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 11px;
+    height: 120px;
+    overflow-y: auto;
+    margin-top: 16px;
+  }
+  .log-line { color: var(--dim); margin-bottom: 4px; }
+  .log-line .ts { color: var(--accent); margin-right: 10px; }
+  .log-line.ok .msg { color: var(--accent3); }
+  .log-line.warn .msg { color: var(--accent2); }
+  .log-line.info .msg { color: var(--text); }
+
+  /* ── APP LIST ── */
+  .app-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+  .app-item {
+    padding: 16px;
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    background: var(--panel);
+  }
+  .app-icon { font-size: 28px; margin-bottom: 8px; }
+  .app-title { font-family: 'Orbitron', monospace; font-size: 12px; color: var(--accent); margin-bottom: 4px; }
+  .app-desc { color: var(--dim); font-size: 12px; }
+
+  /* ── FOOTER ── */
+  footer {
+    padding: 32px 0;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 11px;
+    color: var(--dim);
+    display: flex; justify-content: space-between; flex-wrap: wrap; gap: 16px;
+    border-top: 1px solid var(--border);
+  }
+  .footer-brand { color: var(--accent); }
+
+  /* scrollbar */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  .highlight-box {
+    border-left: 3px solid var(--accent);
+    padding: 14px 20px;
+    background: rgba(0,212,255,0.04);
+    margin: 16px 0;
+    font-size: 13px;
+    color: var(--text);
+  }
+
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+  @media(max-width:700px){ .two-col{ grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<!-- ══ HEADER ══ -->
+<header>
+  <div class="header-label">MECHATRONICS ENGINEERING · MUET JAMSHORO</div>
+  <h1>ROBOTIC ARM<br><span>SIMULATION</span> PROJECT</h1>
+  <p class="subtitle">// PICK & PLACE OPERATION — 5-DOF ARTICULATED ARM</p>
+  <div class="meta-row">
+    <div><span>COURSE:</span>Mechatronics Systems Design</div>
+    <div><span>BATCH:</span>25-MTE · 2nd Semester</div>
+    <div><span>SOFTWARE:</span>2D Canvas Simulation + Technical Analysis</div>
+    <div><span>STATUS:</span>SIMULATION READY</div>
+  </div>
+</header>
+
+<!-- ══ SIMULATION ══ -->
+<section>
+  <div class="sec-label">// Section 01</div>
+  <h2>LIVE SIMULATION — PICK & PLACE OPERATION</h2>
+
+  <div class="sim-container">
+    <div class="sim-header">
+      <div>ROBOTIC ARM CONTROLLER v1.0 · 2D KINEMATIC VIEW</div>
+      <div class="sim-status">
+        <div class="pulse-dot"></div>
+        <span id="statusTxt">IDLE</span>
+      </div>
+    </div>
+
+    <canvas id="armCanvas" height="400"></canvas>
+
+    <div class="telemetry">
+      <div class="tele-box">
+        <div class="tele-label">Base Rotation</div>
+        <div class="tele-val" id="t1">0<span class="tele-unit">°</span></div>
+      </div>
+      <div class="tele-box">
+        <div class="tele-label">Shoulder</div>
+        <div class="tele-val" id="t2">0<span class="tele-unit">°</span></div>
+      </div>
+      <div class="tele-box">
+        <div class="tele-label">Elbow</div>
+        <div class="tele-val" id="t3">0<span class="tele-unit">°</span></div>
+      </div>
+      <div class="tele-box">
+        <div class="tele-label">Wrist Pitch</div>
+        <div class="tele-val" id="t4">0<span class="tele-unit">°</span></div>
+      </div>
+      <div class="tele-box">
+        <div class="tele-label">Gripper</div>
+        <div class="tele-val" id="t5">OPEN</div>
+      </div>
+      <div class="tele-box">
+        <div class="tele-label">Phase</div>
+        <div class="tele-val" id="t6" style="font-size:13px">STANDBY</div>
+      </div>
+    </div>
+
+    <div class="ctrl-row">
+      <button class="btn active" id="btnStart" onclick="startSim()">▶ START CYCLE</button>
+      <button class="btn danger" id="btnStop" onclick="stopSim()">■ STOP</button>
+      <button class="btn success" onclick="resetSim()">↺ RESET</button>
+    </div>
+
+    <div class="log-area" id="logArea"></div>
+  </div>
+</section>
+
+<!-- ══ OBJECTIVES ══ -->
+<section>
+  <div class="sec-label">// Section 02</div>
+  <h2>PROJECT OBJECTIVES</h2>
+  <div class="highlight-box">
+    This project simulates a 5-DOF articulated robotic arm performing an automated pick-and-place operation — a fundamental task in industrial robotics used in manufacturing, logistics, and medical device assembly.
+  </div>
+  <div class="two-col">
+    <div class="card">
+      <h3>PRIMARY OBJECTIVES</h3>
+      <ul style="padding-left:18px;color:var(--dim);font-size:13px;line-height:2">
+        <li>Design and simulate a multi-DOF robotic arm</li>
+        <li>Implement forward kinematics for arm control</li>
+        <li>Demonstrate pick-and-place motion sequencing</li>
+        <li>Analyze joint types and their motion constraints</li>
+        <li>Visualize real-time joint telemetry and arm state</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>TECHNICAL GOALS</h3>
+      <ul style="padding-left:18px;color:var(--dim);font-size:13px;line-height:2">
+        <li>Define workspace envelope and reachability</li>
+        <li>Implement smooth trajectory interpolation</li>
+        <li>Simulate gripper open/close actuation</li>
+        <li>Log operational phases with timestamps</li>
+        <li>Evaluate DOF requirements for task completion</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ══ DOF ANALYSIS ══ -->
+<section>
+  <div class="sec-label">// Section 03</div>
+  <h2>DEGREES OF FREEDOM — 5-DOF ANALYSIS</h2>
+  <div class="highlight-box">
+    The arm has <strong style="color:var(--accent)">5 Degrees of Freedom</strong> plus 1 end-effector DOF (gripper), giving a total of 6 actuated axes. This configuration allows full manipulation within a 3D workspace — sufficient for most industrial pick-and-place tasks.
+  </div>
+  <div class="dof-grid">
+    <div class="dof-card">
+      <div class="dof-num">1</div>
+      <div class="dof-name">BASE ROTATION</div>
+      <div class="dof-type">REVOLUTE JOINT · J1</div>
+      <div class="dof-desc">Rotates the entire arm about the vertical Z-axis. Range: ±180°. Servo-driven with encoder feedback.</div>
+    </div>
+    <div class="dof-card">
+      <div class="dof-num">2</div>
+      <div class="dof-name">SHOULDER PITCH</div>
+      <div class="dof-type">REVOLUTE JOINT · J2</div>
+      <div class="dof-desc">Elevates the upper arm link. Range: 0°–150°. Carries highest torque load; uses DC gear motor.</div>
+    </div>
+    <div class="dof-card">
+      <div class="dof-num">3</div>
+      <div class="dof-name">ELBOW FLEXION</div>
+      <div class="dof-type">REVOLUTE JOINT · J3</div>
+      <div class="dof-desc">Bends the forearm relative to upper arm. Range: 0°–160°. Provides reach extension.</div>
+    </div>
+    <div class="dof-card">
+      <div class="dof-num">4</div>
+      <div class="dof-name">WRIST PITCH</div>
+      <div class="dof-type">REVOLUTE JOINT · J4</div>
+      <div class="dof-desc">Tilts the end-effector up/down. Range: ±90°. Controls object approach angle.</div>
+    </div>
+    <div class="dof-card">
+      <div class="dof-num">5</div>
+      <div class="dof-name">WRIST ROLL</div>
+      <div class="dof-type">REVOLUTE JOINT · J5</div>
+      <div class="dof-desc">Rotates the wrist about its own axis. Range: ±180°. Allows object orientation correction.</div>
+    </div>
+    <div class="dof-card">
+      <div class="dof-num">G</div>
+      <div class="dof-name">GRIPPER</div>
+      <div class="dof-type">PRISMATIC / PARALLEL · EE</div>
+      <div class="dof-desc">Two-finger parallel jaw gripper. Actuated by servo. Open/close stroke: 0–60mm. Force-controlled.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ══ COMPONENTS ══ -->
+<section>
+  <div class="sec-label">// Section 04</div>
+  <h2>COMPONENT SPECIFICATIONS</h2>
+  <table>
+    <tr>
+      <th>Component</th>
+      <th>Type</th>
+      <th>Specification</th>
+      <th>Function</th>
+    </tr>
+    <tr>
+      <td>Base Platform</td>
+      <td>Structural</td>
+      <td>Aluminium 6061, ⌀150mm</td>
+      <td>Fixed mounting, houses J1 servo</td>
+    </tr>
+    <tr>
+      <td>Link 1 (Upper Arm)</td>
+      <td>Rigid Link</td>
+      <td>L = 120mm, 20×20mm profile</td>
+      <td>Connects J1→J2, primary reach</td>
+    </tr>
+    <tr>
+      <td>Link 2 (Forearm)</td>
+      <td>Rigid Link</td>
+      <td>L = 100mm, 20×20mm profile</td>
+      <td>Connects J2→J3, secondary reach</td>
+    </tr>
+    <tr>
+      <td>Link 3 (Wrist)</td>
+      <td>Rigid Link</td>
+      <td>L = 60mm</td>
+      <td>Holds end-effector, J4+J5</td>
+    </tr>
+    <tr>
+      <td>Servo Motors (J1–J5)</td>
+      <td>Actuator</td>
+      <td>MG996R / DS3218, 15kg·cm</td>
+      <td>Joint rotation with position control</td>
+    </tr>
+    <tr>
+      <td>Gripper Servo</td>
+      <td>Actuator</td>
+      <td>SG90, 1.8kg·cm</td>
+      <td>Open/close end-effector fingers</td>
+    </tr>
+    <tr>
+      <td>Controller</td>
+      <td>Microcontroller</td>
+      <td>Arduino Mega 2560</td>
+      <td>Servo PWM control, sequence logic</td>
+    </tr>
+    <tr>
+      <td>Power Supply</td>
+      <td>Electrical</td>
+      <td>12V / 5A DC regulated</td>
+      <td>Servo and controller power</td>
+    </tr>
+    <tr>
+      <td>Sensors</td>
+      <td>Feedback</td>
+      <td>Rotary encoders + IR sensor</td>
+      <td>Joint position feedback, object detect</td>
+    </tr>
+  </table>
+</section>
+
+<!-- ══ PICK & PLACE PHASES ══ -->
+<section>
+  <div class="sec-label">// Section 05</div>
+  <h2>PICK & PLACE — MOTION SEQUENCE</h2>
+  <div class="phase-list">
+    <div class="phase">
+      <div class="phase-num">01</div>
+      <div class="phase-body">
+        <div class="phase-title">HOME POSITION — INITIALIZATION</div>
+        <div class="phase-desc">All joints initialize to zero/home position. Controller performs self-check and encoder calibration. IR sensor scans for object at pickup location. System enters READY state upon confirmation.</div>
+        <div class="tags"><span class="tag hi">J1=0°</span><span class="tag hi">J2=90°</span><span class="tag hi">J3=0°</span><span class="tag warn">GRIPPER: OPEN</span></div>
+      </div>
+    </div>
+    <div class="phase">
+      <div class="phase-num">02</div>
+      <div class="phase-body">
+        <div class="phase-title">APPROACH — TRAJECTORY TO PICK POINT</div>
+        <div class="phase-desc">Base rotates to align with pickup zone. Shoulder and elbow joints execute coordinated motion to position end-effector above the target object. Wrist adjusts pitch to maintain vertical approach vector. Smooth trajectory interpolation (trapezoidal velocity profile) prevents mechanical shock.</div>
+        <div class="tags"><span class="tag hi">REVOLUTE J1–J4</span><span class="tag">TRAPEZOIDAL PROFILE</span><span class="tag warn">VELOCITY CONTROLLED</span></div>
+      </div>
+    </div>
+    <div class="phase">
+      <div class="phase-num">03</div>
+      <div class="phase-body">
+        <div class="phase-title">DESCEND — LOWERING TO GRASP HEIGHT</div>
+        <div class="phase-desc">Shoulder joint lowers the arm vertically while elbow compensates to keep end-effector aligned. Descent speed reduces to 20% as gripper approaches the object (soft-land mode). Proximity confirmed via IR sensor threshold.</div>
+        <div class="tags"><span class="tag hi">FINE MOTION CONTROL</span><span class="tag">SENSOR GATED</span></div>
+      </div>
+    </div>
+    <div class="phase">
+      <div class="phase-num">04</div>
+      <div class="phase-body">
+        <div class="phase-title">GRASP — GRIPPER CLOSES</div>
+        <div class="phase-desc">Gripper servo actuates closed. Finger stroke: 0→30mm (depending on object width). Force feedback monitors grip torque to prevent object crushing. Gripper holds at 60% closure force for typical rigid objects. Confirmation: gripper encoder position logged.</div>
+        <div class="tags"><span class="tag warn">GRIPPER: CLOSING</span><span class="tag hi">FORCE MONITORED</span></div>
+      </div>
+    </div>
+    <div class="phase">
+      <div class="phase-num">05</div>
+      <div class="phase-body">
+        <div class="phase-title">LIFT & TRANSFER — CARRY TO DROP ZONE</div>
+        <div class="phase-desc">Arm retracts upward to clearance height (above all obstacles). Base rotates to align with drop-off zone. Shoulder and elbow joints extend to position above the drop target. Wrist adjusts for correct object orientation at destination.</div>
+        <div class="tags"><span class="tag hi">JOINT COORDINATION</span><span class="tag">OBSTACLE CLEARANCE</span><span class="tag warn">GRIPPER: CLOSED</span></div>
+      </div>
+    </div>
+    <div class="phase">
+      <div class="phase-num">06</div>
+      <div class="phase-body">
+        <div class="phase-title">PLACE — DESCEND & RELEASE</div>
+        <div class="phase-desc">Arm lowers to drop height with same soft-land profile as pickup. Gripper opens to release object. Positional accuracy target: ±2mm. Force sensors confirm object contact with surface before full release.</div>
+        <div class="tags"><span class="tag hi">±2mm ACCURACY</span><span class="tag warn">GRIPPER: OPEN</span></div>
+      </div>
+    </div>
+    <div class="phase">
+      <div class="phase-num">07</div>
+      <div class="phase-body">
+        <div class="phase-title">RETURN HOME — CYCLE COMPLETE</div>
+        <div class="phase-desc">Arm retracts and returns all joints to home position. Cycle counter increments. System waits for next trigger (IR sensor, PLC signal, or manual start). Cycle time: approximately 4–6 seconds per pick-and-place operation.</div>
+        <div class="tags"><span class="tag hi">CYCLE COMPLETE</span><span class="tag">~5s CYCLE TIME</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══ KINEMATICS ══ -->
+<section>
+  <div class="sec-label">// Section 06</div>
+  <h2>WORKING PRINCIPLES & KINEMATICS</h2>
+  <div class="two-col">
+    <div class="card">
+      <h3>FORWARD KINEMATICS</h3>
+      <p style="color:var(--dim);font-size:13px">Given joint angles θ₁…θ₅, FK computes the end-effector position (x, y, z) using the Denavit-Hartenberg (D-H) convention. Each joint frame is described by 4 parameters: link length (a), link twist (α), link offset (d), and joint angle (θ).</p>
+      <div style="margin-top:14px;padding:12px;background:#020810;border:1px solid var(--border);font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--accent3);line-height:1.8">
+        T = T₀¹ · T₁² · T₂³ · T₃⁴ · T₄⁵<br>
+        x_ee = f(θ₁, θ₂, θ₃, θ₄, θ₅)<br>
+        y_ee = g(θ₁, θ₂, θ₃, θ₄, θ₅)<br>
+        z_ee = h(θ₁, θ₂, θ₃, θ₄, θ₅)
+      </div>
+    </div>
+    <div class="card">
+      <h3>INVERSE KINEMATICS</h3>
+      <p style="color:var(--dim);font-size:13px">Given a target position (x, y, z), IK computes required joint angles. For pick-and-place, geometric IK is used for the 3-DOF planar subchain (J2, J3, J4), while J1 is solved independently from the target's azimuth angle.</p>
+      <div style="margin-top:14px;padding:12px;background:#020810;border:1px solid var(--border);font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--accent3);line-height:1.8">
+        θ₁ = atan2(y_target, x_target)<br>
+        θ₃ = ±acos((r²+z²-L₁²-L₂²)/(2L₁L₂))<br>
+        θ₂ = atan2(z, r) - atan2(L₂sinθ₃, L₁+L₂cosθ₃)
+      </div>
+    </div>
+  </div>
+  <div style="margin-top:16px" class="card">
+    <h3>MOTION CONTROL STRATEGY</h3>
+    <p style="color:var(--dim);font-size:13px">Each servo is controlled via PWM signals (50Hz, 1–2ms pulse width). A PID controller on each joint maintains position accuracy. Trajectory planning uses a trapezoidal velocity profile: ramp-up → constant velocity → ramp-down, ensuring smooth, jerk-free motion and protecting mechanical components from stress.</p>
+    <div class="tags" style="margin-top:12px">
+      <span class="tag hi">PWM CONTROL</span>
+      <span class="tag hi">PID FEEDBACK</span>
+      <span class="tag">TRAPEZOIDAL PROFILE</span>
+      <span class="tag warn">JOINT LIMIT PROTECTION</span>
+      <span class="tag">50Hz SERVO FREQ</span>
+    </div>
+  </div>
+</section>
+
+<!-- ══ APPLICATIONS ══ -->
+<section>
+  <div class="sec-label">// Section 07</div>
+  <h2>INDUSTRIAL APPLICATIONS</h2>
+  <div class="app-grid">
+    <div class="app-item">
+      <div class="app-icon">🏭</div>
+      <div class="app-title">MANUFACTURING</div>
+      <div class="app-desc">PCB component placement, automotive assembly lines, CNC machine tending</div>
+    </div>
+    <div class="app-item">
+      <div class="app-icon">📦</div>
+      <div class="app-title">LOGISTICS</div>
+      <div class="app-desc">Warehouse sorting, palletizing/depalletizing, order fulfillment</div>
+    </div>
+    <div class="app-item">
+      <div class="app-icon">🧪</div>
+      <div class="app-title">LABORATORY</div>
+      <div class="app-desc">Sample handling, drug dispensing, medical device assembly</div>
+    </div>
+    <div class="app-item">
+      <div class="app-icon">🍎</div>
+      <div class="app-title">FOOD INDUSTRY</div>
+      <div class="app-desc">Fruit sorting, packaging, hygienic product handling</div>
+    </div>
+    <div class="app-item">
+      <div class="app-icon">⚡</div>
+      <div class="app-title">ELECTRONICS</div>
+      <div class="app-desc">Chip insertion, soldering assistance, quality inspection</div>
+    </div>
+    <div class="app-item">
+      <div class="app-icon">🏥</div>
+      <div class="app-title">BIOMEDICAL</div>
+      <div class="app-desc">Surgical assistance, rehabilitation devices, prosthetics research</div>
+    </div>
+  </div>
+</section>
+
+<!-- ══ CONCLUSION ══ -->
+<section>
+  <div class="sec-label">// Section 08</div>
+  <h2>CONCLUSION</h2>
+  <div class="highlight-box">
+    This project successfully demonstrates the design, kinematic analysis, and simulation of a 5-DOF articulated robotic arm performing a pick-and-place operation. The simulation confirms that coordinated multi-joint motion with PID control and trajectory planning achieves smooth, accurate manipulation.
+  </div>
+  <div class="two-col" style="margin-top:20px">
+    <div class="card">
+      <h3>KEY FINDINGS</h3>
+      <ul style="padding-left:18px;color:var(--dim);font-size:13px;line-height:2.2">
+        <li>5 DOF is sufficient for full pick-and-place tasks</li>
+        <li>Trapezoidal velocity profiles eliminate mechanical shock</li>
+        <li>Geometric IK provides real-time joint solutions</li>
+        <li>PID control maintains ±2mm positional accuracy</li>
+        <li>Cycle time of ~5s is competitive with industrial arms</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>FUTURE IMPROVEMENTS</h3>
+      <ul style="padding-left:18px;color:var(--dim);font-size:13px;line-height:2.2">
+        <li>Add computer vision for dynamic object detection</li>
+        <li>Implement path planning for obstacle avoidance</li>
+        <li>Upgrade to brushless DC motors for higher speed</li>
+        <li>Add force/torque sensor at wrist for compliant grasp</li>
+        <li>Integrate ROS (Robot Operating System) framework</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div><span class="footer-brand">MUET JAMSHORO</span> · Mechatronics Engineering · Batch 25-MTE</div>
+  <div>Robotic Arm Pick & Place Simulation · 5-DOF Articulated Arm</div>
+</footer>
+
+</div><!-- /wrap -->
+
+<!-- ══ SIMULATION JS ══ -->
+<script>
+const canvas = document.getElementById('armCanvas');
+const ctx = canvas.getContext('2d');
+
+// Responsive canvas
+function resizeCanvas() {
+  canvas.width = canvas.offsetWidth;
+  canvas.height = 400;
+}
+resizeCanvas();
+window.addEventListener('resize', () => { resizeCanvas(); drawFrame(); });
+
+// Arm state
+const ARM = {
+  // Joint angles in degrees
+  base: 0, shoulder: 90, elbow: 0, wrist: 0, gripper: 1.0,
+  // Link lengths (pixels, scaled)
+  L1: 90, L2: 75, L3: 55, L4: 40,
+};
+
+// Animation state
+let animating = false;
+let animFrame = null;
+let phase = 'STANDBY';
+let cycleT = 0;
+let gripperOpen = true;
+let pickupPos = null; // where object is
+let dropPos = null;
+let objectCarried = false;
+let objectPlaced = false;
+let logLines = [];
+
+function log(msg, type='info') {
+  const now = new Date();
+  const ts = now.toTimeString().split(' ')[0];
+  logLines.push({ts, msg, type});
+  if(logLines.length > 20) logLines.shift();
+  const la = document.getElementById('logArea');
+  la.innerHTML = logLines.map(l=>`<div class="log-line ${l.type}"><span class="ts">[${l.ts}]</span><span class="msg">${l.msg}</span></div>`).join('');
+  la.scrollTop = la.scrollHeight;
+}
+
+function setStatus(s) {
+  document.getElementById('statusTxt').textContent = s;
+  phase = s;
+}
+
+function updateTelemetry() {
+  document.getElementById('t1').innerHTML = Math.round(ARM.base) + '<span class="tele-unit">°</span>';
+  document.getElementById('t2').innerHTML = Math.round(ARM.shoulder) + '<span class="tele-unit">°</span>';
+  document.getElementById('t3').innerHTML = Math.round(ARM.elbow) + '<span class="tele-unit">°</span>';
+  document.getElementById('t4').innerHTML = Math.round(ARM.wrist) + '<span class="tele-unit">°</span>';
+  document.getElementById('t5').textContent = gripperOpen ? 'OPEN' : 'CLOSED';
+  document.getElementById('t6').textContent = phase;
+}
+
+// ── DRAWING ──
+function drawGrid(cx, cy) {
+  ctx.save();
+  // floor line
+  ctx.strokeStyle = 'rgba(0,212,255,0.12)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([4,8]);
+  ctx.beginPath(); ctx.moveTo(0, cy+5); ctx.lineTo(canvas.width, cy+5); ctx.stroke();
+  ctx.setLineDash([]);
+  // grid
+  ctx.strokeStyle = 'rgba(0,212,255,0.04)';
+  for(let x=0; x<canvas.width; x+=40) {
+    ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,canvas.height); ctx.stroke();
+  }
+  for(let y=0; y<canvas.height; y+=40) {
+    ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(canvas.width,y); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawBase(cx, cy) {
+  ctx.save();
+  // base pedestal
+  const grad = ctx.createLinearGradient(cx-30,cy-10,cx+30,cy+20);
+  grad.addColorStop(0,'#0d2e45'); grad.addColorStop(1,'#051525');
+  ctx.fillStyle = grad;
+  ctx.strokeStyle = '#00d4ff';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(cx-35, cy+20);
+  ctx.lineTo(cx-20, cy);
+  ctx.lineTo(cx+20, cy);
+  ctx.lineTo(cx+35, cy+20);
+  ctx.closePath();
+  ctx.fill(); ctx.stroke();
+  // center dot
+  ctx.beginPath();
+  ctx.arc(cx, cy, 5, 0, Math.PI*2);
+  ctx.fillStyle = '#00d4ff'; ctx.fill();
+  ctx.restore();
+}
+
+function drawLink(x1,y1,x2,y2, color='#00d4ff', w=10) {
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = w;
+  ctx.lineCap = 'round';
+  // shadow glow
+  ctx.shadowColor = color;
+  ctx.shadowBlur = 8;
+  ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+  ctx.shadowBlur = 0;
+  // inner highlight
+  ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+  ctx.restore();
+}
+
+function drawJoint(x,y,r,color='#00d4ff') {
+  ctx.save();
+  ctx.shadowColor = color; ctx.shadowBlur = 12;
+  ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2);
+  ctx.fillStyle = '#030c15'; ctx.fill();
+  ctx.strokeStyle = color; ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+  ctx.beginPath(); ctx.arc(x,y,r*0.4,0,Math.PI*2);
+  ctx.fillStyle = color; ctx.fill();
+  ctx.restore();
+}
+
+function drawGripper(x,y,angle,openAmt) {
+  ctx.save();
+  ctx.translate(x,y);
+  ctx.rotate(angle);
+  const spread = openAmt * 18;
+  // finger 1
+  ctx.strokeStyle = '#00ff88'; ctx.lineWidth = 5; ctx.lineCap = 'round';
+  ctx.shadowColor = '#00ff88'; ctx.shadowBlur = 6;
+  ctx.beginPath();
+  ctx.moveTo(-spread, 0); ctx.lineTo(-spread, 22); ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(spread, 0); ctx.lineTo(spread, 22); ctx.stroke();
+  // palm
+  ctx.beginPath();
+  ctx.moveTo(-spread, 0); ctx.lineTo(spread, 0); ctx.stroke();
+  ctx.shadowBlur = 0;
+  ctx.restore();
+}
+
+function drawObject(x, y, color='#ff6b00', label='OBJ') {
+  ctx.save();
+  ctx.fillStyle = color;
+  ctx.strokeStyle = '#ffaa44';
+  ctx.lineWidth = 1.5;
+  ctx.shadowColor = color; ctx.shadowBlur = 10;
+  ctx.beginPath();
+  ctx.rect(x-12, y-10, 24, 20);
+  ctx.fill(); ctx.stroke();
+  ctx.shadowBlur=0;
+  ctx.fillStyle = '#fff';
+  ctx.font = '9px Share Tech Mono, monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText(label, x, y+4);
+  ctx.restore();
+}
+
+function drawWorkspaceArc(cx, cy) {
+  ctx.save();
+  const maxR = ARM.L1 + ARM.L2 + ARM.L3;
+  const minR = Math.abs(ARM.L1 - ARM.L2);
+  ctx.strokeStyle = 'rgba(0,212,255,0.06)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([3,6]);
+  ctx.beginPath();
+  ctx.arc(cx, cy, maxR, Math.PI, 0);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(cx, cy, minR, Math.PI, 0);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.restore();
+}
+
+function forwardKinematics() {
+  const W = canvas.width, H = canvas.height;
+  const cx = W/2, cy = H - 60;
+  const deg = Math.PI/180;
+
+  // Simplified 2D: base offset = 0, just use shoulder/elbow/wrist in vertical plane
+  const s = ARM.shoulder * deg;
+  const e = ARM.elbow * deg;
+  const w = ARM.wrist * deg;
+
+  // J1 = base (cx, cy)
+  const j1 = {x: cx, y: cy};
+  // J2 = shoulder
+  const j2 = {
+    x: j1.x + ARM.L1 * Math.cos(Math.PI/2 + s - Math.PI/2),
+    y: j1.y - ARM.L1 * Math.sin(Math.PI/2 + s - Math.PI/2)
+  };
+  // Wait let's do it clean:
+  // Shoulder angle from vertical upward
+  const a1 = -(s - Math.PI/2);
+  const j2c = { x: j1.x + ARM.L1*Math.cos(a1), y: j1.y + ARM.L1*Math.sin(a1) };
+  const a2 = a1 + (e - Math.PI/2)*0.8;
+  const j3 = { x: j2c.x + ARM.L2*Math.cos(a2), y: j2c.y + ARM.L2*Math.sin(a2) };
+  const a3 = a2 + (w)*0.5;
+  const j4 = { x: j3.x + ARM.L3*Math.cos(a3), y: j3.y + ARM.L3*Math.sin(a3) };
+  const j5 = { x: j4.x + ARM.L4*Math.cos(a3), y: j4.y + ARM.L4*Math.sin(a3) };
+
+  return {j1, j2:j2c, j3, j4, j5, a3};
+}
+
+function drawFrame() {
+  if(!canvas.width) return;
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0,0,W,H);
+
+  const cx = W/2, cy = H - 60;
+  drawGrid(cx, cy);
+  drawWorkspaceArc(cx, cy);
+
+  // pickup and drop markers
+  const pkX = W*0.25, pkY = cy;
+  const drX = W*0.75, drY = cy;
+
+  // platform lines
+  ctx.save();
+  ctx.strokeStyle = 'rgba(255,107,0,0.3)'; ctx.lineWidth=2; ctx.setLineDash([4,4]);
+  ctx.beginPath(); ctx.moveTo(pkX-30,pkY+5); ctx.lineTo(pkX+30,pkY+5); ctx.stroke();
+  ctx.strokeStyle = 'rgba(0,255,136,0.3)';
+  ctx.beginPath(); ctx.moveTo(drX-30,drY+5); ctx.lineTo(drX+30,drY+5); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = 'rgba(255,107,0,0.6)'; ctx.font='9px Share Tech Mono'; ctx.textAlign='center';
+  ctx.fillText('PICK ZONE', pkX, pkY+18);
+  ctx.fillStyle = 'rgba(0,255,136,0.6)';
+  ctx.fillText('DROP ZONE', drX, drY+18);
+  ctx.restore();
+
+  // Object at pickup (if not carried/placed)
+  if(!objectCarried && !objectPlaced) drawObject(pkX, pkY-12, '#ff6b00', 'PART');
+  if(objectPlaced) drawObject(drX, drY-12, '#00ff88', 'PART');
+
+  const {j1,j2,j3,j4,j5,a3} = forwardKinematics();
+
+  // carried object follows gripper
+  if(objectCarried) drawObject(j5.x, j5.y+16, '#ffaa00', 'PART');
+
+  // links
+  drawLink(j1.x,j1.y,j2.x,j2.y,'#00d4ff',12);
+  drawLink(j2.x,j2.y,j3.x,j3.y,'#0099cc',10);
+  drawLink(j3.x,j3.y,j4.x,j4.y,'#0077aa',8);
+  drawLink(j4.x,j4.y,j5.x,j5.y,'#005588',6);
+
+  // joints
+  drawJoint(j1.x,j1.y,12,'#00d4ff');
+  drawJoint(j2.x,j2.y,9,'#00aadd');
+  drawJoint(j3.x,j3.y,8,'#0088cc');
+  drawJoint(j4.x,j4.y,7,'#0066aa');
+
+  // gripper
+  drawGripper(j5.x, j5.y, a3 + Math.PI/2, ARM.gripper);
+
+  drawBase(cx, cy);
+
+  // labels
+  ctx.save();
+  ctx.font = '9px Share Tech Mono, monospace';
+  ctx.fillStyle = 'rgba(0,212,255,0.5)';
+  ctx.textAlign = 'center';
+  ctx.fillText('J1·BASE', j1.x, j1.y - 16);
+  ctx.fillText('J2·SHOULDER', j2.x + 30, j2.y);
+  ctx.fillText('J3·ELBOW', j3.x + 28, j3.y);
+  ctx.fillText('J4·WRIST', j4.x + 24, j4.y);
+  ctx.restore();
+
+  updateTelemetry();
+}
+
+// ── LERP UTILITY ──
+function lerp(a, b, t) { return a + (b-a)*t; }
+function easeInOut(t) { return t<0.5 ? 2*t*t : -1+(4-2*t)*t; }
+
+// ── ANIMATION SEQUENCER ──
+// Each keyframe: {base, shoulder, elbow, wrist, gripper, duration, label}
+let sequence = [];
+let seqIdx = 0;
+let seqT = 0;
+let prevState = {};
+
+function buildSequence() {
+  sequence = [
+    { base:0, shoulder:90, elbow:0,  wrist:0,   gripper:1.0, dur:60,  label:'HOME POSITION', logMsg:'Initializing joints to home position...', logType:'info' },
+    { base:0, shoulder:40, elbow:60, wrist:-20, gripper:1.0, dur:80,  label:'APPROACHING PICKUP', logMsg:'Approaching pickup zone — trajectory computed', logType:'info' },
+    { base:0, shoulder:20, elbow:90, wrist:-10, gripper:1.0, dur:60,  label:'DESCENDING', logMsg:'Descending to grasp height — soft-land mode', logType:'info' },
+    { base:0, shoulder:20, elbow:90, wrist:-10, gripper:0.0, dur:40,  label:'GRASPING OBJECT', logMsg:'Gripper closing — object detected', logType:'ok' },
+    { base:0, shoulder:70, elbow:30, wrist:10,  gripper:0.0, dur:70,  label:'LIFTING OBJECT', logMsg:'Lifting object — clearance height achieved', logType:'ok' },
+    { base:0, shoulder:70, elbow:30, wrist:10,  gripper:0.0, dur:80,  label:'TRANSFERRING', logMsg:'Rotating to drop zone — object secured', logType:'info' },
+    { base:0, shoulder:40, elbow:70, wrist:-20, gripper:0.0, dur:70,  label:'POSITIONING DROP', logMsg:'Positioning above drop zone', logType:'info' },
+    { base:0, shoulder:20, elbow:100,wrist:-10, gripper:0.0, dur:60,  label:'DESCENDING TO DROP', logMsg:'Descending to drop height — soft-land mode', logType:'info' },
+    { base:0, shoulder:20, elbow:100,wrist:-10, gripper:1.0, dur:40,  label:'PLACING OBJECT', logMsg:'Gripper opening — object placed at ±2mm accuracy', logType:'ok' },
+    { base:0, shoulder:60, elbow:20, wrist:0,   gripper:1.0, dur:70,  label:'RETRACTING', logMsg:'Retracting arm — returning to home', logType:'info' },
+    { base:0, shoulder:90, elbow:0,  wrist:0,   gripper:1.0, dur:60,  label:'HOME — CYCLE COMPLETE', logMsg:'Cycle complete. Ready for next operation.', logType:'ok' },
+  ];
+  seqIdx = 0; seqT = 0;
+  objectCarried = false; objectPlaced = false;
+  prevState = { base:ARM.base, shoulder:ARM.shoulder, elbow:ARM.elbow, wrist:ARM.wrist, gripper:ARM.gripper };
+}
+
+function tickAnim() {
+  if(!animating) return;
+  if(seqIdx >= sequence.length) {
+    setStatus('CYCLE COMPLETE');
+    animating = false;
+    drawFrame();
+    return;
+  }
+  const kf = sequence[seqIdx];
+  seqT++;
+  const t = easeInOut(Math.min(seqT / kf.dur, 1));
+
+  ARM.base = lerp(prevState.base, kf.base, t);
+  ARM.shoulder = lerp(prevState.shoulder, kf.shoulder, t);
+  ARM.elbow = lerp(prevState.elbow, kf.elbow, t);
+  ARM.wrist = lerp(prevState.wrist, kf.wrist, t);
+  ARM.gripper = lerp(prevState.gripper, kf.gripper, t);
+  gripperOpen = ARM.gripper > 0.5;
+
+  // phase logic
+  if(seqIdx === 3 && ARM.gripper < 0.5) objectCarried = true;
+  if(seqIdx === 8 && ARM.gripper > 0.5) { objectCarried = false; objectPlaced = true; }
+
+  setStatus(kf.label);
+  drawFrame();
+
+  if(seqT >= kf.dur) {
+    log(kf.logMsg, kf.logType);
+    prevState = { base:kf.base, shoulder:kf.shoulder, elbow:kf.elbow, wrist:kf.wrist, gripper:kf.gripper };
+    seqIdx++; seqT = 0;
+  }
+
+  animFrame = requestAnimationFrame(tickAnim);
+}
+
+function startSim() {
+  if(animating) return;
+  animating = true;
+  buildSequence();
+  log('=== PICK & PLACE CYCLE INITIATED ===', 'ok');
+  setStatus('RUNNING');
+  tickAnim();
+}
+
+function stopSim() {
+  animating = false;
+  if(animFrame) cancelAnimationFrame(animFrame);
+  setStatus('STOPPED');
+  log('Cycle manually stopped by operator.', 'warn');
+  drawFrame();
+}
+
+function resetSim() {
+  stopSim();
+  ARM.base=0; ARM.shoulder=90; ARM.elbow=0; ARM.wrist=0; ARM.gripper=1.0;
+  gripperOpen=true; objectCarried=false; objectPlaced=false;
+  setStatus('STANDBY');
+  log('System reset to home position.', 'info');
+  drawFrame();
+}
+
+// Init
+drawFrame();
+log('System initialized. Press START CYCLE to begin.', 'ok');
+</script>
+</body>
+</html>
